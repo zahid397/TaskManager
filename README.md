@@ -1,212 +1,205 @@
-# Task Manager (React Native, offline-first)
+<div align="center">
+  <img src="https://capsule-render.vercel.app/api?type=waving&color=0:61DAFB,100:3ECF8E&height=170&section=header&text=TaskManager&fontSize=56&fontColor=1a1a2e&fontAlignY=42&desc=Production-Ready%2C%20Offline-First%20React%20Native%20Task%20Management&descAlignY=62&descSize=15" width="100%" alt="TaskManager banner"/>
 
-A production-quality task manager built for the Mid-Level React Native Engineer assessment: create/edit/delete tasks, assign categories, mark complete/reopen, filter and sort, debounced search, and a per-device "starred" flag — all backed by a local-first cache with a Supabase backend.
+  <img src="https://readme-typing-svg.demolab.com/?font=Poppins&size=18&pause=1200&color=3ECF8E&center=true&vCenter=true&width=600&lines=Offline-First+Architecture;Clean+Layered+Codebase;Zustand+%2B+Supabase+%2B+TypeScript" alt="typing banner"/>
 
-## Table of Contents
-- [Setup](#setup)
-- [Backend: schema and seed data](#backend-schema-and-seed-data)
-- [Architecture overview](#architecture-overview)
-- [Local storage choice: AsyncStorage](#local-storage-choice-asyncstorage)
-- [State management choice: Zustand](#state-management-choice-zustand)
-- [How starred is preserved across a refresh](#how-starred-is-preserved-across-a-refresh)
-- [Offline-first flow](#offline-first-flow)
-- [Write flow (create/edit/delete/complete)](#write-flow-createeditdeletecomplete)
-- [Filter/sort outside the render tree](#filtersort-outside-the-render-tree)
-- [Testing approach](#testing-approach)
-- [Known limitations](#known-limitations)
-- [What I'd do differently with another day](#what-id-do-differently-with-another-day)
-- [AI usage note](#ai-usage-note)
-- [Interview prep notes](#interview-prep-notes)
+  [![React Native](https://img.shields.io/badge/React_Native-CLI-61DAFB?style=for-the-badge&logo=react&logoColor=black)](https://reactnative.dev/)
+  [![TypeScript](https://img.shields.io/badge/TypeScript-5.0+-3178C6?style=for-the-badge&logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
+  [![Zustand](https://img.shields.io/badge/Zustand-State_Management-443E38?style=for-the-badge)](https://github.com/pmndrs/zustand)
+  [![Supabase](https://img.shields.io/badge/Supabase-Backend-3ECF8E?style=for-the-badge&logo=supabase&logoColor=white)](https://supabase.com/)
+  [![Jest](https://img.shields.io/badge/Jest-Testing-C21325?style=for-the-badge&logo=jest&logoColor=white)](https://jestjs.io/)
 
-## Setup
+  <sub>💡 The banner/typing effect above are SVGs from <a href="https://github.com/kyechan99/capsule-render">capsule-render</a> — GitHub strips real <code>&lt;style&gt;</code> animations from README output, this is the standard workaround.</sub>
+</div>
 
-Prerequisites: Node 18+, a React Native development environment set up for at least one platform ([official guide](https://reactnative.dev/docs/set-up-your-environment)), and a free [Supabase](https://supabase.com) project.
+---
 
-```bash
-# 1. Install JS dependencies
-npm install
+## 📌 Overview
 
-# 2. iOS only - install native pods
-cd ios && bundle install && bundle exec pod install && cd ..
+**TaskManager** is a cross-platform mobile task manager built with **React Native CLI + TypeScript**, engineered around an **offline-first architecture**: the task list always renders from a local cache first, then refreshes from Supabase in the background — with a per-device "starred" flag that's guaranteed to survive every refresh.
 
-# 3. Configure environment
-cp .env.example .env
-# then edit .env and fill in SUPABASE_URL / SUPABASE_ANON_KEY
-# (Supabase dashboard -> your project -> Settings -> API)
+Built as a Mid-Level React Native Engineer assessment submission, prioritizing correctness and clean layering over feature breadth.
 
-# 4. Set up the database (see next section) - run supabase/schema.sql then
-#    supabase/seed.sql in the Supabase SQL Editor
+## ✨ Key Features
 
-# 5. Run it
-npm run android
-# or
-npm run ios
+- 📝 **Task CRUD** — create, edit, delete, and mark complete/reopen
+- 🏷️ **Category Management** — view and add categories, assign them to tasks
+- 🔍 **Debounced Search** — 300ms-debounced title search, no per-keystroke filtering
+- 🧮 **Filter & Sort** — by category, status (Open/Done), due date, or created time
+- 📶 **Offline-First Reads** — cached data renders instantly, before any network call
+- 🔄 **Background Sync** — refreshes tasks/categories from Supabase after launch and on pull-to-refresh
+- ⭐ **Local-Only Starred Flag** — never touches the backend; preserved across every refresh by design
+- 🧱 **Feature-Based Architecture** — UI, state, services, and storage cleanly separated
+
+## 🏗️ Architecture
+
+Three strict layers, one direction of dependency: **Screens → Store → Services → (Supabase / AsyncStorage)**. No screen ever imports Supabase or AsyncStorage directly.
+
+```mermaid
+flowchart TD
+    UI["🎨 Screens & Components<br/>TaskList · TaskDetail · TaskForm · Categories"]
+    Store["🧠 Zustand Store<br/>tasks · filters · search · sync status"]
+    Services["🔌 Services<br/>taskApi · categoryApi · cache"]
+    Supabase[("☁️ Supabase<br/>Postgres")]
+    Cache[("📦 AsyncStorage<br/>Local Cache")]
+
+    UI <--> Store
+    Store <--> Services
+    Services <--> Supabase
+    Services <--> Cache
+
+    style UI fill:#61DAFB33,stroke:#61DAFB
+    style Store fill:#F5E0FF,stroke:#8B5CF6
+    style Services fill:#FFF3CD,stroke:#F59E0B
+    style Supabase fill:#3ECF8E33,stroke:#3ECF8E
+    style Cache fill:#E5E7EB,stroke:#6B7280
 ```
 
-Run the test suite (does not require a configured backend or a device/emulator):
+### Offline-First Read Path
+
+```mermaid
+flowchart LR
+    A[App Opens] --> B[Read AsyncStorage Cache]
+    B --> C[Render Immediately]
+    C --> D{Online?}
+    D -->|Yes| E[Fetch Supabase]
+    E --> F[Merge Local Starred State]
+    F --> G[Update Cache + Store]
+    D -->|No| H[Show Offline Banner]
+    H --> I[Keep Cached Data on Screen]
+
+    style D fill:#FEF3C7,stroke:#F59E0B
+    style H fill:#FEE2E2,stroke:#EF4444
+    style G fill:#D1FAE5,stroke:#10B981
+```
+
+The list is **never blank** — cache renders before any network request even starts.
+
+### Write Path (Create / Edit / Delete / Complete)
+
+Writes are **request-first, not optimistic**: the UI only updates after Supabase confirms success, and a failed write leaves the cache completely untouched instead of rolling back a guessed state.
+
+```mermaid
+sequenceDiagram
+    actor User
+    participant UI as Screen
+    participant API as taskApi.ts
+    participant DB as Supabase
+    participant Store as Zustand Store
+    participant Cache as AsyncStorage
+
+    User->>UI: Submit create / edit / delete / complete
+    UI->>API: Call API function
+    API->>DB: Insert / Update / Delete
+    alt Write succeeds
+        DB-->>API: Row returned
+        API-->>UI: Success
+        UI->>Store: Update in-memory state
+        UI->>Cache: Persist tasks_cache
+    else Write fails
+        DB-->>API: Error
+        API-->>UI: Throws
+        UI->>User: Show error banner
+        Note over Store,Cache: Left untouched — no partial state
+    end
+```
+
+> **How starred survives a refresh:** `mergeTasksWithStarred()` (`src/features/tasks/utils/`) maps every fresh-from-Supabase task through the locally-cached starred map before it ever reaches the store — the server has no `starred` column at all, so there's nothing to overwrite.
+
+## 🛠️ Tech Stack
+
+| Layer | Technology |
+|---|---|
+| Framework | React Native CLI, TypeScript |
+| Navigation | React Navigation (native stack) |
+| State | Zustand |
+| Backend | Supabase (Postgres) |
+| Local Cache | AsyncStorage |
+| Connectivity | `@react-native-community/netinfo` |
+| Testing | Jest + React Native Testing Library |
+
+## 📁 Folder Structure
+
+```
+TaskManager/
+├── android/, ios/            Native projects
+├── src/
+│   ├── app/navigation/       RootNavigator, route param types
+│   ├── features/
+│   │   ├── tasks/
+│   │   │   ├── components/   TaskItem, StarButton, SearchBar, FilterBar...
+│   │   │   ├── screens/      TaskListScreen, TaskDetailScreen, TaskFormScreen
+│   │   │   ├── hooks/        useDebouncedSearch, useFilteredTasks
+│   │   │   ├── utils/        filterTasks, sortTasks, mergeTasksWithStarred
+│   │   │   ├── store/        taskStore.ts
+│   │   │   └── types/
+│   │   └── categories/       screens/ store/ types/
+│   ├── sync/
+│   │   ├── components/       OfflineBanner, SyncStatusBar
+│   │   └── hooks/             useNetworkStatus, useTasksSync
+│   ├── services/              supabase.ts, taskApi.ts, categoryApi.ts, cache.ts
+│   ├── storage/                asyncStorage.ts, keys.ts
+│   ├── theme/                  colors, spacing, typography tokens
+│   └── tests/                  4 suites, 31 tests
+├── supabase/                  schema.sql, seed.sql
+└── .env.example
+```
+
+## 🧪 Testing
+
+Jest + React Native Testing Library, **4 suites / 31 tests**, all pure-logic or storage-contract tests (no device/emulator required):
+
+| Suite | Covers |
+|---|---|
+| `filterAndSort.test.ts` | Category/status filtering, both sort orders, non-mutation |
+| `mergeTasksWithStarred.test.ts` | The starred-survives-refresh guarantee |
+| `useDebouncedSearch.test.ts` | 300ms debounce timing, via Jest fake timers |
+| `cache.test.ts` | AsyncStorage round-trip for the cache layer |
 
 ```bash
-npm test          # 31 tests, 4 suites
+npm test          # run all suites
 npm run typecheck  # tsc --noEmit
 npm run lint       # eslint
 ```
 
-## Backend: schema and seed data
+## ⚙️ Installation
 
-Backend: **Supabase** (hosted Postgres + auto-generated REST API via `@supabase/supabase-js`). Chosen because the assessment listed it as the default and it needs zero backend code to stand up — create a project, run two SQL files, and the schema/RLS/seed data are done.
+```bash
+# 1. Clone the repository
+git clone <repository-url>
+cd TaskManager
 
-1. Create a project at [supabase.com](https://supabase.com).
-2. **SQL Editor -> New query** -> paste the full contents of [`supabase/schema.sql`](./supabase/schema.sql) -> **Run**.
-3. New query again -> paste [`supabase/seed.sql`](./supabase/seed.sql) -> **Run**.
-4. **Settings -> API** -> copy the Project URL and `anon` `public` key into your `.env`.
+# 2. Install dependencies
+npm install
+cd ios && bundle install && bundle exec pod install && cd ..   # iOS only
 
-**Schema** (see `supabase/schema.sql` for the full, commented version):
+# 3. Configure environment variables
+cp .env.example .env
+# fill in SUPABASE_URL and SUPABASE_ANON_KEY (Supabase → Settings → API)
+# then run supabase/schema.sql and supabase/seed.sql in the SQL Editor
 
-```
-categories: id (uuid, pk), name (text, unique), created_at (timestamptz)
-tasks:      id (uuid, pk), title (text), description (text, nullable),
-            category_id (uuid, fk -> categories, nullable),
-            status (text: 'open' | 'done'), due_date (timestamptz, nullable),
-            created_at (timestamptz), updated_at (timestamptz, auto-updated by trigger)
-```
+# 4. Run Metro (separate terminal)
+npx react-native start
 
-Indexes on `category_id`, `status`, `due_date`, and `created_at` support the filter/sort operations. There is deliberately **no `starred` column** — see [How starred is preserved](#how-starred-is-preserved-across-a-refresh).
-
-**RLS**: enabled with permissive `anon`-role policies (`using (true)`), documented inline in `schema.sql`, since authentication is explicitly out of scope for this assessment. The comment in that file spells out the exact change needed if auth is added later (a `user_id` column + `auth.uid() = user_id` policies).
-
-**Seed data** (`supabase/seed.sql`): 3 categories (Work, Personal, Health) and 9 tasks with deliberately mixed status/dates — some overdue, some upcoming, one far-future, one with **no due date at all** (to exercise the "undated tasks sort last" rule for real, not just in the unit test), 5 open / 4 done, spread across all three categories. Re-running the seed script is safe — it's guarded with `where not exists` per task and `on conflict` for categories.
-
-## Architecture overview
-
-```
-src/
-  app/navigation/       RootStackParamList + RootNavigator (single stack navigator)
-  features/
-    tasks/
-      components/       TaskItem (memoized), StarButton, StatusBadge, SearchBar,
-                         FilterBar, SortControls, CategoryPicker, EmptyState, ErrorBanner
-      screens/           TaskListScreen, TaskDetailScreen, TaskFormScreen
-      hooks/             useDebouncedSearch, useFilteredTasks
-      utils/             filterTasks, sortTasks, mergeTasksWithStarred, taskMappers
-      store/             taskStore (Zustand)
-      types/
-    categories/          screens/ store/ types/ (same shape, smaller)
-  sync/
-    components/          OfflineBanner, SyncStatusBar
-    hooks/                useNetworkStatus (NetInfo -> store), useTasksSync (the
-                          offline-first load/refresh flow)
-  services/               supabase.ts, taskApi.ts, categoryApi.ts, cache.ts
-  storage/                asyncStorage.ts (generic wrapper), keys.ts (key constants)
-  utils/                  date.ts (relative time / formatting)
-  theme/                  shared colors/spacing/typography tokens
-  tests/                  the 4 test files (see Testing approach)
+# 5. Run the Android app
+npm run android
 ```
 
-Layering rule followed throughout: **screens call hooks/store actions -> hooks/actions call services -> services call Supabase or AsyncStorage.** No screen imports `@supabase/supabase-js` or `AsyncStorage` directly — that indirection is what makes the star-merge and cache-write-only-on-success rules enforceable in one place each, instead of re-implemented (and potentially re-broken) in every screen.
+## 📦 APK Download
 
-Navigation is a **single stack navigator** (`TaskList -> TaskDetail`, `TaskList -> TaskForm`, `TaskList -> Categories`), matching the tech-stack requirement exactly. The Categories screen is reached via a header button rather than a bottom tab bar — the brief asks for 4 screens on a stack, not a tab layout, so that's what's built.
+Download the latest Android APK:
+**[⬇️ Download TaskManager.apk](https://drive.google.com/file/d/1EA-8K6roAmmKVNADLeZP4mx9Z39PS1p4/view)**
 
-## Local storage choice: AsyncStorage
+## 📸 Screenshots
 
-**AsyncStorage**, as suggested in the brief. Reasoning: the cached dataset here is a few dozen JSON-serializable tasks/categories plus a small starred-id map — well within AsyncStorage's comfortable range, and it needs zero native setup beyond the one community package already in the required tech stack. MMKV is meaningfully faster and supports synchronous reads, which matters once you're storing megabytes of data or need to read on every render — neither applies here (the async round-trip cache read is a one-time cost at app launch, not a per-frame cost). SQLite would earn its complexity if this needed real queries (`WHERE`/`JOIN`/pagination) against the *cache itself* — but all filtering/sorting/searching already happens in memory against the in-flight `Task[]` array (see [Filter/sort outside the render tree](#filtersort-outside-the-render-tree)), so the cache's only job is "persist this array, read it back" — exactly AsyncStorage's sweet spot.
+| Task List | Task Detail | Create Task |
+|:---:|:---:|:---:|
+| _coming soon_ | _coming soon_ | _coming soon_ |
 
-## State management choice: Zustand
+## 👨‍💻 Developer Notes
 
-**Zustand**, per the brief's suggested options. Reasoning: Redux Toolkit's action/reducer/selector ceremony is disproportionate for one feature's worth of state; Context + `useReducer` works but re-renders every consumer on any state change unless you hand-split contexts, which is exactly the boilerplate Zustand avoids by letting each component subscribe to only the slice it needs (e.g. `useTaskStore(state => state.loading)` re-renders only on `loading` changes, not on every `tasks` mutation). TanStack Query is genuinely excellent for the *server* half of this problem (caching, background refetch, retries) — but it manages a request/response cache, not arbitrary client state, and this app also needs to hold UI-only state (filters, search query, sort — plus a `starred` field TanStack Query would never know exists, since it doesn't come from the server). Zustand's single store comfortably holds both without needing two libraries stitched together.
+Three judgment calls worth calling out: **AsyncStorage over MMKV/SQLite** — the cached dataset is a few dozen small JSON records, well inside AsyncStorage's comfort zone, and every query already runs in memory rather than against the cache itself. **Zustand over Redux Toolkit or Context** — one feature's worth of state doesn't justify Redux's ceremony, and Context re-renders every consumer on any change unless hand-split. **Request-first writes over optimistic updates** — simpler to reason about and impossible to leave in a half-synced state on failure, at the cost of a small delay before the UI reflects a change. Deeper rationale for each lives as comments directly in `store/` and `services/`.
 
-## How starred is preserved across a refresh
-
-The `starred` field is **never sent to or read from Supabase** — there's no `starred` column in the `tasks` table at all. Instead:
-
-1. `toggleStar(id)` (in `taskStore.ts`) flips the flag in memory and persists a `{ [taskId]: boolean }` map to the `starred_tasks` AsyncStorage key. No network request happens at all for this action.
-2. Every time fresh data arrives from Supabase (`fetchTasks()` in `taskApi.ts`), each row comes back through `remoteTaskToTask()` with `starred: false` — the server literally cannot say otherwise, since it has no concept of the field.
-3. `mergeTasksWithStarred(serverTasks, starredMap)` (`src/features/tasks/utils/mergeTasksWithStarred.ts`) is the single place that reconciles the two: it maps over the fresh server tasks and sets `starred: starredMap[task.id] ?? false` on each one. This function runs on **every** background refresh, inside `useTasksSync.refresh()`, before the merged result is written to cache or the store.
-
-```ts
-export function mergeTasksWithStarred(serverTasks: Task[], starredMap: StarredMap): Task[] {
-  return serverTasks.map(task => ({
-    ...task,
-    starred: starredMap[task.id] ?? false,
-  }));
-}
-```
-
-This is directly covered by `src/tests/mergeTasksWithStarred.test.ts`, including a test explicitly named around "THE CORE GUARANTEE" that simulates a full refresh cycle and asserts the previously-starred task keeps `starred: true` even though the "fresh from server" data it's merged with all arrives `starred: false`.
-
-## Offline-first flow
-
-Implemented in `src/sync/hooks/useTasksSync.ts`, exactly as specified:
-
-1. **On app open**: read `tasks_cache` / `categories_cache` / `last_refresh_time` from AsyncStorage and populate the store immediately — this happens before any network call, so the list is never blank on a cold start even with zero connectivity.
-2. **Check connectivity** via `NetInfo.fetch()`.
-3. **If online**: fetch fresh tasks + categories from Supabase, merge starred state in (above), write the merged result to `tasks_cache`/`categories_cache`/`last_refresh_time`, and update the Zustand store.
-4. **If offline**: the cached data loaded in step 1 is left exactly as-is; `useNetworkStatus.ts` mirrors NetInfo's connectivity into the store so `OfflineBanner` renders. Nothing here ever renders a blank screen.
-5. **On a failed refresh** (e.g. request timeout while "online" per NetInfo but the Supabase call itself throws): caught, logged, and — critically — the cache and store are **not** touched, so the previous good state stays on screen instead of being wiped by an error.
-
-Pull-to-refresh on the Task List screen calls the same `refresh()` function directly (skipping the initial cache read, since it's already in memory).
-
-## Write flow (create/edit/delete/complete)
-
-Every write (`TaskFormScreen`'s submit, `TaskDetailScreen`'s complete/reopen and delete) follows the same shape:
-
-```
-1. Call the Supabase API function (services/taskApi.ts)
-2. On success: update the Zustand store AND AsyncStorage cache
-3. On failure: show an ErrorBanner / Alert, and do NOT touch the store or cache
-```
-
-No optimistic updates and no offline write queue, per the assessment's explicit scope. If a write fails, the user sees exactly what they had before, plus a visible error — never a silently-lost edit and never a UI that raced ahead of a request that then failed.
-
-## Filter/sort outside the render tree
-
-`useFilteredTasks(sortOption)` (`src/features/tasks/hooks/useFilteredTasks.ts`) is the **only** place `filterTasks`, `searchTasksByTitle`, and `sortTasks` are chained together, and it's memoized with `useMemo` keyed on `[tasks, filters, debouncedQuery, sortOption]`. `TaskListScreen` calls this one hook and renders its result — there is no `.filter()`/`.sort()` call anywhere inside a screen or component's JSX/render body.
-
-Debouncing lives in `useDebouncedSearch` (plain `setTimeout`/`clearTimeout`, 300ms default) and is composed *inside* `useFilteredTasks` — the search box itself stays a fully responsive controlled input (see `SearchBar.tsx`'s comment on why the debounce must not touch the visible text), while the relatively expensive filter/sort pass it triggers is what's delayed.
-
-## Testing approach
-
-31 tests across 4 files, run with `npm test` (Jest + React Native Testing Library):
-
-| File | What it covers | Why |
-|---|---|---|
-| `filterAndSort.test.ts` | **Required.** `filterTasks` (category, status, combined), `searchTasksByTitle`, `sortTasks` (both orders, undated-task handling, non-mutation) | The assessment explicitly requires filter/sort coverage — this is the most direct, highest-value test to write since it's pure logic with clear inputs/outputs. |
-| `mergeTasksWithStarred.test.ts` | The star-merge guarantee: preserved on refresh, defaults to `false`, ignores stale ids, non-mutation | This is the single piece of logic the "Local-field preservation across refresh" (High weight) criterion hinges on — worth a dedicated, thorough suite rather than one assertion buried elsewhere. |
-| `useDebouncedSearch.test.ts` | 300ms delay behavior via Jest fake timers: no update before the delay, update exactly at the delay, a burst of keystrokes collapsing into one update, cleanup on unmount | Debouncing is a timing behavior, easy to get subtly wrong (off-by-one on the delay, not clearing the previous timer); fake timers make it deterministic instead of flaky. |
-| `cache.test.ts` (bonus, not required) | Round-trips `tasks_cache` and `starred_tasks` through the *real* `@react-native-async-storage/async-storage` Jest mock | The other three are pure-function tests with no I/O; this one exercises the actual storage contract, closer to an integration test. |
-
-**What's intentionally not tested**: component rendering/snapshot tests for screens. Given the fixed time budget, testing effort went into the business logic the evaluation criteria weight highest (filter/sort, local-field preservation) rather than shallow "does this render without crashing" tests that mostly just restate the implementation. The default React Native template's own `App.test.tsx` smoke test was removed for the same reason — rendering the fully-wired `App` now needs Supabase/NetInfo/Navigation all mocked for a test that would mostly just prove imports resolve.
-
-## Known limitations
-
-- **No offline write queue.** Creating/editing/deleting a task while offline fails immediately with a visible error; there's no local queue that replays writes once connectivity returns. Explicitly out of scope per the brief.
-- **No conflict resolution.** If the same task is edited on two devices, last-write-wins at the database level; there's no version vector or merge UI. Explicitly out of scope.
-- **No optimistic updates.** Every write waits for the Supabase round-trip before the UI reflects it. This is a deliberate simplicity/correctness trade rather than an oversight — see next section.
-- **Due date input is a plain `YYYY-MM-DD` text field**, not a native date picker, to avoid adding another native dependency for one field (see the in-app hint text). Validated with a regex before submit.
-- **Category deletion isn't exposed in the UI** (the brief marks rename/delete as optional). The category API function (`deleteCategory`) exists in `services/categoryApi.ts` but isn't wired to a button.
-- **RLS is fully permissive** (any anon request can read/write any row) since there's no auth yet — documented explicitly in `schema.sql`, not left as a silent gap.
-
-## What I'd do differently with another day
-
-1. **Refresh automatically on reconnect**, not just on app-open and pull-to-refresh — listening for a NetInfo transition from offline -> online and triggering `refresh()` at that moment. I left this out deliberately for this submission: it's a read-only enhancement (no queued writes, no conflict resolution), but the brief's explicit "if you find yourself building [sync features], stop" made me want to ship exactly what's asked first and call this out as the next increment rather than quietly scope-creep it in.
-2. **A native date picker** for due dates instead of the regex-validated text field, if a date library were pre-approved (the current one avoids adding a dependency not in the required stack).
-3. **Category rename/delete UI** — the API functions already exist; wiring them up is mechanical.
-4. **A few component-level tests** (e.g., `TaskItem` renders the right status badge/star state for a given task) once the higher-value logic tests were solid.
-5. **Pagination or a windowed query** if the task count were expected to reach the thousands server-side — see the note below on 2,000 tasks.
-
-## AI usage note
-
-This entire implementation — architecture, all source files, the SQL schema/seed data, and the test suite — was built by Claude (Anthropic) working directly from the two assessment documents (the task brief PDF and the design mockup image), inside a sandboxed dev environment with real `npm install`/`tsc`/`eslint`/`jest` execution used to verify each piece rather than assuming it would work. Every code comment explaining a *why* (not just a *what*) reflects an actual design decision made during the build — e.g., the AsyncStorage-vs-MMKV-vs-SQLite reasoning above, the choice of a modal-based category picker over a native picker library, and the deliberate decision *not* to add reconnect-triggered auto-refresh.
-
-Two genuine build-time issues surfaced and were fixed through actual tool execution, not guessed at: React Native 0.86 split its Jest preset into a separate `@react-native/jest-preset` package not installed by default (the generated `jest.config.js` referenced it but the package wasn't present), and `@testing-library/react-native` v14 made `renderHook`/`rerender`/`unmount`/`act` all return Promises (a real breaking change from v12/v13) — both required rewriting configuration/test code to match, which is documented inline in the affected files.
-
-Judgment calls worth being able to explain in an interview (all covered in more depth above): why Zustand over the other three options, why AsyncStorage over MMKV/SQLite, why the star-merge function is a separate testable unit rather than inlined into the sync hook, why writes are request-then-cache-update rather than optimistic, and why RLS is enabled-but-permissive rather than just left disabled.
-
-## Interview prep notes
-
-*(Notes only, not part of the app — see the assessment's "The Interview After" section.)*
-
-- **No internet on open?** `useTasksSync`'s `loadInitial()` reads AsyncStorage first and calls `setTasks`/`setCategories` before `NetInfo.fetch()` is even awaited — the list is populated from cache regardless of what NetInfo says next. If `NetInfo.fetch()` then reports offline, `refresh()` returns early and `OfflineBanner` renders because `useNetworkStatus` mirrors the same NetInfo state into the store.
-- **Where is starred preserved?** `mergeTasksWithStarred` in `src/features/tasks/utils/mergeTasksWithStarred.ts`, called from `useTasksSync.refresh()` on every background sync. Break it by, e.g., changing that call to `setTasks(serverTasks)` directly (skipping the merge) — the `mergeTasksWithStarred.test.ts` suite would immediately fail on the "CORE GUARANTEE" test.
-- **Why Zustand?** See [State management choice](#state-management-choice-zustand) — less ceremony than Redux Toolkit, avoids Context's re-render-everything problem, and holds UI-only state (like `starred`) that a server-cache library like TanStack Query has no model for.
-- **Why debounce, and why 300ms?** See [Filter/sort outside the render tree](#filtersort-outside-the-render-tree) — collapses a fast typing burst into one filter pass instead of one per keystroke; 300ms is comfortably under the ~400-500ms threshold where an input starts to feel laggy, while still absorbing a normal typing cadence.
-- **If the task list grew to 2,000 items?** In order of what I'd check first: (1) confirm `FlatList` virtualization is actually configured well — `keyExtractor`, `initialNumToRender`, `windowSize`, `removeClippedSubviews` (all already set in `TaskListScreen`, tuned for a modest list — I'd re-tune these specifically for 2,000); (2) confirm `TaskItem`'s `React.memo` is actually preventing re-renders (verify with `why-did-you-render` or the React DevTools profiler, since a broken memo comparator silently degrades exactly like this); (3) move `useFilteredTasks`' `useMemo` dependencies under scrutiny — three inputs changing together could thrash the memo; (4) if the *data source* itself is the bottleneck rather than rendering, that's when cursor-based pagination on `fetchTasks()` (Supabase `.range()`) becomes worth the added complexity, rather than fetching all 2,000 rows on every refresh.
+<div align="center">
+  <img src="https://capsule-render.vercel.app/api?type=waving&color=0:3ECF8E,100:61DAFB&height=90&section=footer" width="100%" alt="footer"/>
+</div>
